@@ -1,5 +1,7 @@
 package com.interviewiq.auth;
 
+import com.interviewiq.dto.UserDTO;
+import com.interviewiq.services.UserService;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -11,9 +13,11 @@ import java.io.IOException;
 public class AuthFilter implements Filter {
 
     private final JwtUtil jwtUtil;
+    private final UserService userService;
 
-    public AuthFilter(JwtUtil jwtUtil) {
+    public AuthFilter(JwtUtil jwtUtil, UserService userService) {
         this.jwtUtil = jwtUtil;
+        this.userService = userService;
     }
 
     @Override
@@ -23,31 +27,24 @@ public class AuthFilter implements Filter {
         HttpServletRequest req = (HttpServletRequest) request;
         HttpServletResponse res = (HttpServletResponse) response;
 
-        String path = req.getRequestURI();
-
-        // Public endpoints
-        if (path.startsWith("/api/auth") || path.startsWith("/api/questions") || !path.startsWith("/api")) {
-            chain.doFilter(request, response);
-            return;
+        // TEMPORARY DEMO OVERRIDE: 
+        // 1. JWT validation is completely disabled to allow all requests for frontend testing (Vercel integration).
+        // 2. We automatically get/create a demo user to inject a valid userId into the request,
+        //    which prevents "User not found" errors in downstream controllers and services.
+        
+        try {
+            UserDTO demoUserDto = new UserDTO();
+            demoUserDto.setUsername("demo_user");
+            demoUserDto.setPassword("demo_password");
+            UserDTO createdDemoUser = userService.getOrCreateUser(demoUserDto);
+            
+            req.setAttribute("userId", createdDemoUser.getId());
+        } catch (Exception e) {
+            // Fallback in case of DB issues
+            req.setAttribute("userId", 1L);
         }
 
-        String authHeader = req.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            res.getWriter().write("Missing or invalid Authorization header");
-            return;
-        }
-
-        String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) {
-            res.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            res.getWriter().write("Invalid or expired token");
-            return;
-        }
-
-        Long userId = jwtUtil.getUserIdFromToken(token);
-        req.setAttribute("userId", userId);
-
+        // Proceed without any token checks (permitAll equivalent)
         chain.doFilter(request, response);
     }
 }
